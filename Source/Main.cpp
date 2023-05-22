@@ -32,27 +32,35 @@ void setupEnvironmentFont()
 }
 #endif
 
+juce::Font getFontWithTypefaceNameAndPointHeightAndStyle(const juce::String typefacename, float pointheight, int style)
+{
+	juce::Font tmpfont;
+	tmpfont.setTypefaceName(typefacename);
+	juce::Typeface::Ptr tf = tmpfont.getTypefacePtr();
+	float scale = tf->getHeightToPointsFactor();
+	float fontheight = pointheight / scale;
+	return juce::Font(typefacename, fontheight, style);
+}
+
 class MainComponent : public juce::Component
 {
 private:
 	struct Renderer
 	{
-		juce::Component* component = nullptr;
 		juce::ComponentPeer* peer = nullptr;
 		juce::StringArray engineNameList;
 		int engineIndex = 0;
 		std::function<void()> onEngineListDidUpdate;
 		std::function<void()> onEngineDidChange;
-		Renderer(juce::Component* p) : component(p)
+		Renderer()
 		{
 		}
-		void updatePeer()
+		void updatePeer(juce::Component* cmp)
 		{
-			juce::ComponentPeer* p = component->getPeer();
+			juce::ComponentPeer* p = cmp->getPeer();
 			if(peer == p) return;
 			peer = p;
-			if(!peer) return;
-			engineNameList = peer->getAvailableRenderingEngines();
+			engineNameList = peer ? peer->getAvailableRenderingEngines() : juce::StringArray();
 			if(onEngineListDidUpdate) onEngineListDidUpdate();
 			setEngineIndex(engineIndex);
 		}
@@ -70,16 +78,14 @@ private:
 	juce::ComboBox engineCombo;
 	juce::ComboBox typefaceCombo;
 	juce::ComboBox fontSizeCombo;
-	juce::Label label;
+	juce::Label infoLabel;
 	juce::TextEditor textEditor;
-	enum { Margin = 8, Spacing = 4, ControlHeight = 24 };
+	juce::Label displayLabel;
+	enum { Margin = 8, CBHeight = 24, EngineWidth = 160, TypefaceWidth = 160, FontsizeWidth = 80, InfoWidth = 160 };
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 public:
-	MainComponent() : renderer(this)
+	MainComponent()
 	{
-//		setOpaque(true);
-//		DBG("defaultalpha=" << getAlpha());
-//		setAlpha(1);
 		renderer.onEngineListDidUpdate = [this]()
 		{
 			engineCombo.clear(juce::dontSendNotification);
@@ -104,67 +110,82 @@ public:
 			updateFont();
 		};
 		addAndMakeVisible(fontSizeCombo);
-		fontSizeCombo.addItemList({ "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24", "26", "28", "36", "48", "72" }, 1);
+		fontSizeCombo.setEditableText(true);
+		fontSizeCombo.addItemList(juce::StringArray({ 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72 }), 1);
 		fontSizeCombo.setText(juce::String(juce::Font().getHeight()), juce::dontSendNotification);
-		if(fontSizeCombo.getSelectedItemIndex() < 0) fontSizeCombo.setSelectedItemIndex(0, juce::dontSendNotification);
 		fontSizeCombo.onChange = [this]()
 		{
 			updateFont();
 		};
-		addAndMakeVisible(label);
-		label.setJustificationType(juce::Justification::topLeft);
+		addAndMakeVisible(infoLabel);
+		infoLabel.setFont(juce::Font().withPointHeight(12));
+		infoLabel.setJustificationType(juce::Justification::topLeft);
 		addAndMakeVisible(textEditor);
 		textEditor.setMultiLine(true, true);
 		textEditor.setReturnKeyStartsNewLine(true);
 		textEditor.setTabKeyUsedAsCharacter(true);
 		textEditor.onTextChange = [this]()
 		{
-			label.setText(textEditor.getText(), juce::dontSendNotification);
+			displayLabel.setText(textEditor.getText(), juce::dontSendNotification);
 		};
-		textEditor.setText(juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory().getChildFile("sampletext.txt").loadFileAsString());
+		addAndMakeVisible(displayLabel);
+		displayLabel.setColour(juce::Label::ColourIds::outlineColourId, getLookAndFeel().findColour(juce::TextEditor::ColourIds::outlineColourId));
+		displayLabel.setJustificationType(juce::Justification::topLeft);
 		updateFont();
 		setSize(480, 320);
+		loadTextFile(juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory().getChildFile("sampletext.txt"));
 	}
 	virtual ~MainComponent() override
 	{
 	}
 	void updateFont()
 	{
-		juce::Font font(typefaceCombo.getText(), fontSizeCombo.getText().getFloatValue(), juce::Font::plain);
-		DBG("font=" << font.getTypefaceName().quoted() << " " << font.getHeight());
+		juce::Font font = getFontWithTypefaceNameAndPointHeightAndStyle(typefaceCombo.getText(), fontSizeCombo.getText().getFloatValue(), juce::Font::plain);
+		juce::Typeface::Ptr tf = font.getTypefacePtr();
+		DBG("font=" << font.getTypefaceName().quoted());
+		DBG(juce::String::formatted("  font={ height=%g, ascent=%g, descent=%g, ascent+descent=%g, pointheight=%g }", font.getHeight(), font.getAscent(), font.getDescent(), font.getAscent() + font.getDescent(), font.getHeightInPoints()));
+		DBG(juce::String::formatted("  typeface={ ascent=%g, descent=%g, ascent+descent=%g, heighttopointsfactor=%g }", tf->getAscent(), tf->getDescent(), tf->getAscent() + tf->getDescent(), tf->getHeightToPointsFactor()));
+		infoLabel.setText(juce::String::formatted("height=%g\nascent=%g\ndescent=%g\nascent+descent=%g\npointheight=%g\nleading=%g", font.getHeight(), font.getAscent(), font.getDescent(), font.getAscent() + font.getDescent(), font.getHeightInPoints(), font.getHeight() - font.getHeightInPoints()), juce::dontSendNotification);
 		textEditor.applyFontToAllText(font);
-		label.setFont(font);
+		displayLabel.setFont(font);
 	}
 	virtual void parentHierarchyChanged() override
 	{
-		renderer.updatePeer();
+		renderer.updatePeer(this);
 	}
 	virtual void resized() override
 	{
 		juce::Rectangle<int> rc = getLocalBounds().reduced(Margin);
-		juce::Rectangle<int> rccb = rc.removeFromTop(ControlHeight);
-		engineCombo.setBounds(rccb.removeFromLeft(160));
-		typefaceCombo.setBounds(rccb.removeFromLeft(160));
-		fontSizeCombo.setBounds(rccb.removeFromLeft(80));
-		rc.removeFromTop(Spacing);
+		juce::Rectangle<int> rccb = rc.removeFromTop(CBHeight);
+		engineCombo.setBounds(rccb.removeFromLeft(EngineWidth));
+		typefaceCombo.setBounds(rccb.removeFromLeft(TypefaceWidth));
+		fontSizeCombo.setBounds(rccb.removeFromLeft(FontsizeWidth));
+		infoLabel.setBounds(rc.removeFromLeft(InfoWidth));
 		textEditor.setBounds(rc.removeFromTop(rc.getHeight() / 2));
-		label.setBounds(rc);
+		displayLabel.setBounds(rc);
 	}
 	virtual void paint(juce::Graphics& g) override
 	{
 		g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 	}
+	void loadTextFile(const juce::File& path)
+	{
+		if(!path.existsAsFile() || (65536 <= path.getSize())) return;
+		textEditor.setText(path.loadFileAsString());
+	}
 };
 
-class MainWindow : public juce::DocumentWindow
+class MainWindow : public juce::DocumentWindow, public juce::FileDragAndDropTarget
 {
 private:
+	std::unique_ptr<MainComponent> mainComponent;
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 public:
 	MainWindow(juce::String name) : DocumentWindow(name, juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId), DocumentWindow::allButtons)
 	{
 		setUsingNativeTitleBar(true);
-		setContentOwned(new MainComponent(), true);
+		mainComponent = std::make_unique<MainComponent>();
+		setContentNonOwned(mainComponent.get(), true);
 #if JUCE_IOS || JUCE_ANDROID
 		setFullScreen(true);
 #else
@@ -176,6 +197,14 @@ public:
 	virtual void closeButtonPressed() override
 	{
 		juce::JUCEApplication::getInstance()->systemRequestedQuit();
+	}
+	virtual bool isInterestedInFileDrag(const juce::StringArray& files) override
+	{
+		return files.size() == 1;
+	}
+	virtual void filesDropped(const juce::StringArray& files, int, int) override
+	{
+		mainComponent->loadTextFile(juce::File(files[0]));
 	}
 };
 
