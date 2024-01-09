@@ -23,14 +23,15 @@ void setupEnvironmentFont()
 #endif
 }
 
-juce::Font getFontWithTypefaceNameAndPointHeightAndStyle(const juce::String typefacename, float pointheight, int style)
+juce::Font getFontWithTypefaceNameAndPointHeightAndStyle(const juce::String typefacename, const juce::String& typefacestyle, float pointheight)
 {
 	juce::Font tmpfont;
 	tmpfont.setTypefaceName(typefacename);
+	tmpfont.setTypefaceStyle(typefacestyle);
 	juce::Typeface::Ptr tf = tmpfont.getTypefacePtr();
 	float scale = tf->getHeightToPointsFactor();
 	float fontheight = pointheight / scale;
-	return juce::Font(typefacename, fontheight, style);
+	return juce::Font(typefacename, typefacestyle, fontheight);
 }
 
 class MainComponent : public juce::Component
@@ -68,11 +69,12 @@ private:
 	} renderer;
 	juce::ComboBox engineCombo;
 	juce::ComboBox typefaceCombo;
+	juce::ComboBox styleCombo;
 	juce::ComboBox fontSizeCombo;
 	juce::Label infoLabel;
 	juce::TextEditor textEditor;
 	juce::Label displayLabel;
-	enum { Margin = 8, CBHeight = 24, EngineWidth = 160, TypefaceWidth = 160, FontsizeWidth = 80, InfoWidth = 160 };
+	enum { Margin = 8, CBHeight = 24, EngineWidth = 160, TypefaceWidth = 160, StyleWidth = 80, FontsizeWidth = 80, InfoWidth = 160 };
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 public:
 	MainComponent()
@@ -93,10 +95,13 @@ public:
 			renderer.setEngineIndex(engineCombo.getSelectedItemIndex());
 		};
 		addAndMakeVisible(typefaceCombo);
-		typefaceCombo.addItemList(juce::Font::findAllTypefaceNames(), 1);
-		typefaceCombo.setText(juce::Font().getTypefacePtr()->getName(), juce::dontSendNotification);
-		if(typefaceCombo.getSelectedItemIndex() < 0) typefaceCombo.setSelectedItemIndex(0, juce::dontSendNotification);
 		typefaceCombo.onChange = [this]()
+		{
+			fillStyle();
+			updateFont();
+		};
+		addAndMakeVisible(styleCombo);
+		styleCombo.onChange = [this]()
 		{
 			updateFont();
 		};
@@ -122,6 +127,26 @@ public:
 		addAndMakeVisible(displayLabel);
 		displayLabel.setColour(juce::Label::ColourIds::outlineColourId, getLookAndFeel().findColour(juce::TextEditor::ColourIds::outlineColourId));
 		displayLabel.setJustificationType(juce::Justification::topLeft);
+		// init
+		juce::String deftypeface = juce::Font().getTypefacePtr()->getName();
+		juce::StringArray typefacelist = juce::Font::findAllTypefaceNames();
+		typefaceCombo.addItemList(typefacelist, 1);
+		// first, find exact match
+		for(int c = typefacelist.size(), i = 0; i < c; ++i)
+		{
+			if(typefacelist[i] == deftypeface) { typefaceCombo.setSelectedItemIndex(i, juce::NotificationType::dontSendNotification); break; }
+		}
+		// next, find partial match
+		if(typefaceCombo.getSelectedItemIndex() < 0)
+		{
+			for(int c = typefacelist.size(), i = 0; i < c; ++i)
+			{
+				if(typefacelist[i].startsWith(deftypeface) || deftypeface.startsWith(typefacelist[i])) { typefaceCombo.setSelectedItemIndex(i, juce::NotificationType::dontSendNotification); break; }
+			}
+		}
+		// finally, select the first
+		if(typefaceCombo.getSelectedItemIndex() < 0) typefaceCombo.setSelectedItemIndex(0, juce::dontSendNotification);
+		fillStyle();
 		updateFont();
 		setSize(480, 320);
 #if JUCE_WINDOWS
@@ -134,14 +159,29 @@ public:
 	virtual ~MainComponent() override
 	{
 	}
+	void fillStyle()
+	{
+		styleCombo.clear();
+		juce::String typeface = typefaceCombo.getText();
+		juce::StringArray stylelist = juce::Font::findAllTypefaceStyles(typeface);
+		styleCombo.addItemList(stylelist, 1);
+		styleCombo.setSelectedItemIndex(0, juce::NotificationType::dontSendNotification);
+	}
 	void updateFont()
 	{
-		juce::Font font = getFontWithTypefaceNameAndPointHeightAndStyle(typefaceCombo.getText(), fontSizeCombo.getText().getFloatValue(), juce::Font::plain);
+		juce::Font font = getFontWithTypefaceNameAndPointHeightAndStyle(typefaceCombo.getText(), styleCombo.getText(), fontSizeCombo.getText().getFloatValue());
 		juce::Typeface::Ptr tf = font.getTypefacePtr();
-		DBG("font=" << font.getTypefaceName().quoted());
-		DBG(juce::String::formatted("  font={ height=%g, ascent=%g, descent=%g, ascent+descent=%g, pointheight=%g }", font.getHeight(), font.getAscent(), font.getDescent(), font.getAscent() + font.getDescent(), font.getHeightInPoints()));
-		DBG(juce::String::formatted("  typeface={ ascent=%g, descent=%g, ascent+descent=%g, heighttopointsfactor=%g }", tf->getAscent(), tf->getDescent(), tf->getAscent() + tf->getDescent(), tf->getHeightToPointsFactor()));
-		infoLabel.setText(juce::String::formatted("height=%g\nascent=%g\ndescent=%g\nascent+descent=%g\npointheight=%g\nleading=%g", font.getHeight(), font.getAscent(), font.getDescent(), font.getAscent() + font.getDescent(), font.getHeightInPoints(), font.getHeight() - font.getHeightInPoints()), juce::dontSendNotification);
+		juce::String info;
+		info += "default san serif:\n" + juce::Font().getTypefacePtr()->getName().quoted();
+		info += "\n\n";
+		info += "selected:\n";
+		info += juce::String::formatted("height=%g\n", font.getHeight());
+		info += juce::String::formatted("ascent=%g\n", font.getAscent());
+		info += juce::String::formatted("descent=%g\n", font.getDescent());
+		info += juce::String::formatted("ascent+descent=%g\n", font.getAscent() + font.getDescent());
+		info += juce::String::formatted("pointheight=%g\n", font.getHeightInPoints());
+		info += juce::String::formatted("leading=%g\n", font.getHeight() - font.getHeightInPoints());
+		infoLabel.setText(info, juce::dontSendNotification);
 		textEditor.applyFontToAllText(font);
 		displayLabel.setFont(font);
 	}
@@ -155,6 +195,7 @@ public:
 		juce::Rectangle<int> rccb = rc.removeFromTop(CBHeight);
 		engineCombo.setBounds(rccb.removeFromLeft(EngineWidth));
 		typefaceCombo.setBounds(rccb.removeFromLeft(TypefaceWidth));
+		styleCombo.setBounds(rccb.removeFromLeft(StyleWidth));
 		fontSizeCombo.setBounds(rccb.removeFromLeft(FontsizeWidth));
 		infoLabel.setBounds(rc.removeFromLeft(InfoWidth));
 		textEditor.setBounds(rc.removeFromTop(rc.getHeight() / 2));
