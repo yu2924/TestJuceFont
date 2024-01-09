@@ -6,31 +6,22 @@
 //
 
 #include <JuceHeader.h>
+#include "PlatformGlue.h"
 
-#if JUCE_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
 void setupEnvironmentFont()
 {
-	LOGFONTW lf{};
-	SystemParametersInfoW(SPI_GETICONTITLELOGFONT, sizeof(lf), &lf, 0);
-	DBG("DefaultSansSerifTypefaceName=" << juce::String(lf.lfFaceName).quoted());
+	juce::String typefacename = PlatformGlue::getSystemSansSerifTypefaceName();
+	DBG("DefaultSansSerifTypefaceName=" << typefacename.quoted());
 #define SELECT_TYPEFACE_BYNAME 0
 #if SELECT_TYPEFACE_BYNAME
-	juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName(lf.lfFaceName);
+	juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName(typefacename);
 #else
 	juce::Font font;
-	font.setTypefaceName(lf.lfFaceName);
+	font.setTypefaceName(typefacename);
 	juce::Typeface::Ptr tf = font.getTypefacePtr();
 	juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypeface(tf);
 #endif
 }
-#else
-void setupEnvironmentFont()
-{
-}
-#endif
 
 juce::Font getFontWithTypefaceNameAndPointHeightAndStyle(const juce::String typefacename, float pointheight, int style)
 {
@@ -133,7 +124,12 @@ public:
 		displayLabel.setJustificationType(juce::Justification::topLeft);
 		updateFont();
 		setSize(480, 320);
-		loadTextFile(juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory().getChildFile("sampletext.txt"));
+#if JUCE_WINDOWS
+		juce::File sampletextfile = juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory().getChildFile("../../../../../sampletext.txt");
+#elif JUCE_MAC
+		juce::File sampletextfile = juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory().getChildFile("../../../../sampletext.txt");
+#endif
+		loadTextFile(sampletextfile);
 	}
 	virtual ~MainComponent() override
 	{
